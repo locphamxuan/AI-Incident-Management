@@ -5,6 +5,7 @@ import { createLogger, createRedisClient, KafkaClient } from "@ai-incident/share
 import { IncidentRepository } from "./db.js";
 import { RealtimeGateway } from "./websocket.js";
 import { startIncidentConsumer } from "./consumers/incidentConsumer.js";
+import { startRootCauseConsumer } from "./consumers/rootCauseConsumer.js";
 import { createIncidentsRouter } from "./routes/incidents.js";
 
 const logger = createLogger("incident-service");
@@ -29,5 +30,6 @@ const gateway = new RealtimeGateway(
 );
 
 await startIncidentConsumer(kafka, repository, gateway, logger);
+await startRootCauseConsumer(kafka, gateway);
 
 httpServer.listen(port, () => logger.info({ port }, "incident-service listening (HTTP + WebSocket)"));
