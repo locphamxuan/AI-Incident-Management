@@ -2,6 +2,7 @@
   "name": "ai-incident-management",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "description": "Event-driven AI incident management platform (Kafka, Redis, WebSocket, Postgres/Timescale, RAG)",
   "workspaces": [
     "backend/shared",

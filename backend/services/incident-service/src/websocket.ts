@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import type Redis from "ioredis";
+import type { Redis } from "ioredis";
 
 const CHANNEL = "incident-updates";
 
@@ -21,7 +21,7 @@ export class RealtimeGateway {
   ) {
     this.wss = new WebSocketServer({ server });
     void redisSub.subscribe(CHANNEL);
-    redisSub.on("message", (_channel, message) => this.broadcastLocal(message));
+    redisSub.on("message", (_channel: string, message: string) => this.broadcastLocal(message));
   }
 
   async publish(event: unknown): Promise<void> {

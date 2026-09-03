@@ -1,4 +1,4 @@
-import type Redis from "ioredis";
+import type { Redis } from "ioredis";
 import { CircuitBreaker } from "../resilience/circuitBreaker.js";
 import { withRetry } from "../resilience/retry.js";
 
