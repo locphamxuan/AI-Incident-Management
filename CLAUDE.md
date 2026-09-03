@@ -1,0 +1,80 @@
+# AI Incident Management — Project Rules
+
+These rules apply to every contributor (human or AI) working in this repository.
+They are binding: follow them without asking for re-confirmation each time —
+that authorization is granted by this file existing.
+
+## 1. Git workflow
+
+- **Branch per context.** Before starting any feature, fix, or non-trivial
+  change, checkout a new branch from `main`:
+  - `feature/<short-name>` — new capability
+  - `fix/<short-name>` — bug fix
+  - `chore/<short-name>` — tooling, config, docs, refactors with no behavior change
+  - Never commit feature work directly to `main`. `main` only receives merges.
+- **Split commits by context.** One commit = one cohesive change. Don't bundle
+  unrelated changes ("add retry util" and "fix websocket reconnect" are two
+  commits, not one). Prefer several small, reviewable commits over one large one.
+- **Commit messages: English only.**
+  - Imperative mood, Conventional Commits prefix: `feat:`, `fix:`, `chore:`,
+    `refactor:`, `test:`, `docs:`, `perf:`.
+  - Plain text only. Do **not** add any AI tool name, logo, byline, or
+    `Co-Authored-By` trailer to commits in this repository — this project's
+    commit history stays tool-agnostic.
+- **Tests gate the commit.** After finishing a feature or a fix, run the test
+  suite for the affected workspace(s) before committing. Don't commit code
+  with failing tests or skip tests to "come back later."
+- **Update project context.** After finishing any task — a feature, a fix, an
+  architecture change — update [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) with
+  what changed, why, and what's next. A task isn't done until that file
+  reflects it.
+
+## 2. Tech stack
+
+- **Backend:** Node.js + TypeScript (all services)
+- **Frontend:** React + TypeScript (Vite)
+- **Primary datastore:** PostgreSQL (+ TimescaleDB extension for time-series
+  metrics/logs, + pgvector for RAG embeddings)
+- **Event backbone:** Apache Kafka (high-throughput log/event streaming)
+- **Work queue:** RabbitMQ (per-message ack/retry/DLQ semantics for slower,
+  stateful jobs — e.g. AI root-cause analysis jobs)
+- **Cache / pub-sub:** Redis (hot-path caching, WebSocket fan-out across
+  instances, circuit-breaker state)
+- **Realtime:** WebSocket (incident-service → dashboard live updates)
+- **AI:** Anthropic Claude API + RAG over a runbook/past-incident corpus
+  (pgvector similarity search)
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design and the
+rationale behind each choice.
+
+## 3. Code quality & testing
+
+- Lint/format: ESLint + Prettier — `npm run lint` / `npm run format` at the
+  repo root (runs across all workspaces).
+- Tests: Vitest per workspace — `npm test -w <workspace>` for a single
+  package/service, `npm test` at the root for everything.
+- CI (`.github/workflows/ci.yml`) runs lint + tests on every push/PR; don't
+  merge a branch that fails CI.
+- Favor small, composable modules over large ones. No speculative
+  abstractions — build what the current pipeline stage needs.
+
+## 4. Working in this repo with Claude Code
+
+- Use the `codebase-memory` MCP graph tools (`search_graph`, `trace_path`,
+  `get_architecture`, `get_code_snippet`) to navigate the codebase instead of
+  blind grepping. Re-run `index_repository` after structural changes.
+- Use the `/code-review` skill before merging any non-trivial branch.
+- Use the `/security-review` skill for anything touching auth, secrets,
+  external input parsing, or the LLM prompt/tool boundary.
+- Use the `run` skill / `docker-compose up` to actually exercise a change
+  through the pipeline before calling it done — passing tests confirm
+  correctness, not that the feature works end to end.
+
+## 5. Resilience patterns (non-negotiable for any new consumer/producer)
+
+Every new Kafka consumer, RabbitMQ consumer, or outbound call to
+Redis/Postgres/an external API must use the shared primitives in
+`packages/shared/src/resilience/` (retry with backoff, circuit breaker) and
+publish failed messages to the relevant dead-letter topic/queue instead of
+dropping or infinite-looping them. See `docs/ARCHITECTURE.md` §Fault
+Tolerance for the pattern each stage uses.
