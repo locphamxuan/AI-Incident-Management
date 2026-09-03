@@ -1,0 +1,32 @@
+{
+  "name": "ai-incident-management",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Event-driven AI incident management platform (Kafka, Redis, WebSocket, Postgres/Timescale, RAG)",
+  "workspaces": [
+    "backend/shared",
+    "backend/services/*",
+    "frontend"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "eslint": "^9.11.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
