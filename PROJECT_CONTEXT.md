@@ -18,55 +18,70 @@ tolerance (retry, dead-letter queues, circuit breaker).
 
 ## Log
 
-### 2026-09-03 — Initial bootstrap
+### 2026-09-03 — Initial bootstrap (frontend/backend pipeline, end to end)
 - Created repo governance: `CLAUDE.md` (git/testing/quality rules) and this
   file.
 - Authored `docs/ARCHITECTURE.md`: full pipeline design, tech-stack
   rationale, Redis roles, WebSocket fan-out via Redis pub/sub, TimescaleDB +
   pgvector schema, and the fault-tolerance pattern (retry / DLQ / circuit
   breaker) each stage must follow.
-- Scaffolded the codebase as a `frontend/` + `backend/` split (per explicit
-  request, in place of an initial apps/services/packages layout):
-  - `backend/shared` — resilience primitives (retry, circuit breaker),
-    Kafka client wrapper, Redis sliding-window counter, logger, shared
-    event types.
+- Scaffolded the full pipeline as a `frontend/` + `backend/` split:
+  - `backend/shared` — retry-with-backoff, circuit breaker, Kafka client
+    (auto DLQ on exhausted retries), Redis client + sliding-window rate
+    counter, logger, shared event types.
   - `backend/services/log-collector` — HTTP ingest → Kafka `logs.raw`.
   - `backend/services/log-processor` — consumes `logs.raw`, normalizes,
     writes to the `raw_logs` TimescaleDB hypertable, republishes
     `logs.processed`.
   - `backend/services/anomaly-detection` — rule engine (CPU spike, HTTP
-    5xx rate via a Redis sliding-window counter, Redis timeout, Postgres
+    5xx rate via the Redis sliding-window counter, Redis timeout, Postgres
     pool exhaustion) over `logs.processed`, emits `incidents.detected`.
-  - `backend/services/incident-service`, `backend/services/ai-agent` —
-    directory scaffolding created; implementation still pending (see Next
-    up).
-  - `frontend/` — React dashboard, not yet implemented.
+  - `backend/services/incident-service` — correlates signals into one
+    incident timeline per service, persists to Postgres, REST API, and a
+    WebSocket gateway (Redis pub/sub fan-out) that pushes both incident
+    updates and finished root-cause analyses to the dashboard live.
+  - `backend/services/ai-agent` — consumes `incident.analysis.jobs`,
+    retrieves relevant runbooks via pgvector cosine search (Voyage AI
+    embeddings), asks Claude for the root-cause narrative (circuit-breaker
+    + retry wrapped), publishes `incidents.analyzed`.
+  - `frontend/` — React dashboard: incident list + timeline/root-cause
+    view, live-updating over the WebSocket hook.
   - `infra/` — `docker-compose.yml` (Kafka, Redis, Postgres +
     Timescale/pgvector, all services), Postgres init SQL, Kafka topics doc.
 - Added root tooling: TypeScript project references, ESLint + Prettier,
   Vitest, GitHub Actions CI (lint + test on push/PR).
 - **Correction during the session:** the plan originally included RabbitMQ
   as a separate job queue for the AI agent and a generic `apps/services/
-  packages` monorepo layout. Both were revised on explicit feedback: RabbitMQ
-  was dropped (Kafka topic `incident.analysis.jobs`, keyed by `incidentId`,
-  covers the same need without a second broker — see `docs/ARCHITECTURE.md`
-  for the tradeoff), and the layout was changed to `frontend/` + `backend/`.
-  `.gitignore` was also extended to exclude local AI-assistant tool state
-  (`.claude/`, `.claude-mem/`) — project docs stay tracked.
-- **Status:** `backend/shared`, `log-collector`, `log-processor`, and
-  `anomaly-detection` are structurally complete with unit tests. Not yet
-  installed/run end-to-end in this session.
+  packages` monorepo layout. Both were revised on explicit feedback:
+  RabbitMQ was dropped (Kafka topic `incident.analysis.jobs`, keyed by
+  `incidentId`, covers the same need without a second broker — see
+  `docs/ARCHITECTURE.md` for the tradeoff), and the layout was changed to
+  `frontend/` + `backend/`. `.gitignore` was also extended to exclude local
+  AI-assistant tool state (`.claude/`, `.claude-mem/`) — project docs stay
+  tracked.
+- **Validated, not just written:** ran `npm install`, `npm test`,
+  `npm run typecheck`, `npm run lint`, and `npm run build` for real across
+  every workspace (not just eyeballed) and fixed what they caught — an
+  ioredis default-import/type mismatch under `NodeNext` resolution (switch
+  to the named `Redis` export) and a missing `"type": "module"` on the root
+  `package.json`. 38 tests pass, 0 lint/typecheck errors, frontend
+  production bundle builds. `package-lock.json` is committed (required for
+  `npm ci` in CI).
+- **Status:** the full pipeline (collector → Kafka → processor → anomaly
+  detection → incident service → AI agent → dashboard) is structurally
+  complete with unit tests at each stage. Not yet run against the live
+  Docker Compose stack (Kafka/Redis/Postgres) in this session — only
+  unit-level, with dependencies mocked.
 
 ## Next up
-- Implement `backend/services/incident-service` (persistence, REST API,
-  WebSocket gateway with Redis pub/sub fan-out, publishes
-  `incident.analysis.jobs`) and `backend/services/ai-agent` (Kafka
-  consumer, pgvector RAG retrieval, Claude call, writes
-  `root_cause_analyses`).
-- Implement `frontend/` (incident list + live timeline dashboard).
-- `npm install` at the root and bring the stack up via
-  `docker-compose up -d` to validate the pipeline end to end.
-- Seed `runbooks` table with example postmortems so the RAG retriever has
-  something to retrieve against.
-- Add integration tests that exercise a full log → incident → root-cause
-  round trip against the dockerized dependencies.
+- Bring the stack up via `docker compose -f infra/docker-compose.yml up
+  --build` and validate one full log → incident → root-cause round trip
+  against real Kafka/Redis/Postgres.
+- Seed the `runbooks` table with example postmortems so the RAG retriever
+  in `ai-agent` has something real to retrieve against (currently empty).
+- Add integration tests that exercise that same round trip against the
+  dockerized dependencies (today's tests all mock Kafka/Postgres/Redis at
+  the unit level).
+- `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` are required in `.env` for
+  `ai-agent` to actually call Claude / generate embeddings — neither is
+  set yet.
