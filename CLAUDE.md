@@ -6,12 +6,18 @@ that authorization is granted by this file existing.
 
 ## 1. Git workflow
 
-- **Branch per context.** Before starting any feature, fix, or non-trivial
-  change, checkout a new branch from `main`:
+- **`dev` is the integration branch; `main` is deploy-only.** All active
+  development happens on `dev` (directly, or via short-lived branches cut
+  from `dev` and merged back into it). `main` is only ever updated by
+  merging `dev` → `main` at the moment of a deploy — never commit feature
+  work, fixes, or docs straight to `main`.
+- **Branch per context.** For anything non-trivial, checkout a new branch
+  from `dev`:
   - `feature/<short-name>` — new capability
   - `fix/<short-name>` — bug fix
   - `chore/<short-name>` — tooling, config, docs, refactors with no behavior change
-  - Never commit feature work directly to `main`. `main` only receives merges.
+  - Merge back into `dev` when done. Small, same-session work can commit
+    directly to `dev`.
 - **Split commits by context.** One commit = one cohesive change. Don't bundle
   unrelated changes ("add retry util" and "fix websocket reconnect" are two
   commits, not one). Prefer several small, reviewable commits over one large one.

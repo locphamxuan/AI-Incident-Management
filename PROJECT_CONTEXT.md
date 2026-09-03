@@ -73,6 +73,15 @@ tolerance (retry, dead-letter queues, circuit breaker).
   Docker Compose stack (Kafka/Redis/Postgres) in this session — only
   unit-level, with dependencies mocked.
 
+### 2026-09-03 — Branch model: `dev` for development, `main` for deploy
+- Per explicit request, switched the git workflow: `main` was reset back to
+  the original initial commit (matches `origin/main` — nothing had been
+  pushed yet), and all bootstrap work now lives on `dev`. `dev` is the
+  integration branch going forward; `main` only receives a merge from `dev`
+  at deploy time. Updated `CLAUDE.md` §1 and `.github/workflows/ci.yml`
+  (now triggers on both `main` and `dev`) to match.
+- Pushed both branches to `origin` (`locphamxuan/AI-Incident-Management`).
+
 ## Next up
 - Bring the stack up via `docker compose -f infra/docker-compose.yml up
   --build` and validate one full log → incident → root-cause round trip
