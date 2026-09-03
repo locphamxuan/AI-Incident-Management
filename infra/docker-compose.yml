@@ -1,0 +1,83 @@
+name: ai-incident-management
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports: ["2181:2181"]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on: [zookeeper]
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672" # management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  redis:
+    image: redis:7.4-alpine
+    ports: ["6379:6379"]
+
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_USER: incident
+      POSTGRES_PASSWORD: incident
+      POSTGRES_DB: incident_management
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pg-data:/home/postgres/pgdata/data
+
+  log-collector:
+    build: ../services/log-collector
+    depends_on: [kafka]
+    ports: ["4001:4001"]
+    env_file: ../.env
+
+  log-processor:
+    build: ../services/log-processor
+    depends_on: [kafka, postgres]
+    env_file: ../.env
+
+  anomaly-detection:
+    build: ../services/anomaly-detection
+    depends_on: [kafka, redis]
+    env_file: ../.env
+
+  incident-service:
+    build: ../services/incident-service
+    depends_on: [kafka, redis, postgres, rabbitmq]
+    ports:
+      - "4002:4002"
+      - "4003:4003"
+    env_file: ../.env
+
+  ai-agent:
+    build: ../services/ai-agent
+    depends_on: [rabbitmq, postgres]
+    env_file: ../.env
+
+  web:
+    build: ../apps/web
+    depends_on: [incident-service]
+    ports: ["5173:5173"]
+    env_file: ../.env
+
+volumes:
+  pg-data:
