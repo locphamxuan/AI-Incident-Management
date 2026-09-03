@@ -20,15 +20,6 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
-  rabbitmq:
-    image: rabbitmq:3.13-management
-    ports:
-      - "5672:5672"
-      - "15672:15672" # management UI
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-
   redis:
     image: redis:7.4-alpine
     ports: ["6379:6379"]
@@ -45,13 +36,13 @@ services:
       - pg-data:/home/postgres/pgdata/data
 
   # All service images build from the repo root context (not this
-  # directory) because every service depends on the `packages/shared`
+  # directory) because every service depends on the `backend/shared`
   # workspace package — the Dockerfile needs the whole monorepo in scope.
 
   log-collector:
     build:
       context: ..
-      dockerfile: services/log-collector/Dockerfile
+      dockerfile: backend/services/log-collector/Dockerfile
     depends_on: [kafka]
     ports: ["4001:4001"]
     env_file: ../.env
@@ -59,22 +50,22 @@ services:
   log-processor:
     build:
       context: ..
-      dockerfile: services/log-processor/Dockerfile
+      dockerfile: backend/services/log-processor/Dockerfile
     depends_on: [kafka, postgres]
     env_file: ../.env
 
   anomaly-detection:
     build:
       context: ..
-      dockerfile: services/anomaly-detection/Dockerfile
+      dockerfile: backend/services/anomaly-detection/Dockerfile
     depends_on: [kafka, redis]
     env_file: ../.env
 
   incident-service:
     build:
       context: ..
-      dockerfile: services/incident-service/Dockerfile
-    depends_on: [kafka, redis, postgres, rabbitmq]
+      dockerfile: backend/services/incident-service/Dockerfile
+    depends_on: [kafka, redis, postgres]
     ports:
       - "4002:4002"
       - "4003:4003"
@@ -83,14 +74,14 @@ services:
   ai-agent:
     build:
       context: ..
-      dockerfile: services/ai-agent/Dockerfile
-    depends_on: [rabbitmq, postgres]
+      dockerfile: backend/services/ai-agent/Dockerfile
+    depends_on: [kafka, postgres]
     env_file: ../.env
 
   web:
     build:
       context: ..
-      dockerfile: apps/web/Dockerfile
+      dockerfile: frontend/Dockerfile
     depends_on: [incident-service]
     ports: ["5173:5173"]
     env_file: ../.env

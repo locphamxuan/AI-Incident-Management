@@ -29,15 +29,19 @@ that authorization is granted by this file existing.
   what changed, why, and what's next. A task isn't done until that file
   reflects it.
 
-## 2. Tech stack
+## 2. Tech stack & layout
 
-- **Backend:** Node.js + TypeScript (all services)
-- **Frontend:** React + TypeScript (Vite)
+- **`backend/`** — Node.js + TypeScript. `backend/shared` is the common
+  library (resilience primitives, Kafka/Redis clients, shared types);
+  `backend/services/*` are independently deployable pipeline stages
+  (log-collector, log-processor, anomaly-detection, incident-service,
+  ai-agent).
+- **`frontend/`** — React + TypeScript (Vite) dashboard.
 - **Primary datastore:** PostgreSQL (+ TimescaleDB extension for time-series
   metrics/logs, + pgvector for RAG embeddings)
-- **Event backbone:** Apache Kafka (high-throughput log/event streaming)
-- **Work queue:** RabbitMQ (per-message ack/retry/DLQ semantics for slower,
-  stateful jobs — e.g. AI root-cause analysis jobs)
+- **Event backbone:** Apache Kafka — used for both the high-throughput
+  log/event stream and the AI agent's analysis job queue (see
+  `docs/ARCHITECTURE.md` for why a second broker isn't warranted here)
 - **Cache / pub-sub:** Redis (hot-path caching, WebSocket fan-out across
   instances, circuit-breaker state)
 - **Realtime:** WebSocket (incident-service → dashboard live updates)
@@ -72,9 +76,8 @@ rationale behind each choice.
 
 ## 5. Resilience patterns (non-negotiable for any new consumer/producer)
 
-Every new Kafka consumer, RabbitMQ consumer, or outbound call to
-Redis/Postgres/an external API must use the shared primitives in
-`packages/shared/src/resilience/` (retry with backoff, circuit breaker) and
-publish failed messages to the relevant dead-letter topic/queue instead of
-dropping or infinite-looping them. See `docs/ARCHITECTURE.md` §Fault
-Tolerance for the pattern each stage uses.
+Every new Kafka consumer or outbound call to Redis/Postgres/an external API
+must use the shared primitives in `backend/shared/src/resilience/` (retry
+with backoff, circuit breaker) and publish failed messages to the relevant
+`<topic>.dlq` instead of dropping or infinite-looping them. See
+`docs/ARCHITECTURE.md` §Fault Tolerance for the pattern each stage uses.
