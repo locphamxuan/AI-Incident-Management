@@ -44,24 +44,36 @@ services:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
       - pg-data:/home/postgres/pgdata/data
 
+  # All service images build from the repo root context (not this
+  # directory) because every service depends on the `packages/shared`
+  # workspace package — the Dockerfile needs the whole monorepo in scope.
+
   log-collector:
-    build: ../services/log-collector
+    build:
+      context: ..
+      dockerfile: services/log-collector/Dockerfile
     depends_on: [kafka]
     ports: ["4001:4001"]
     env_file: ../.env
 
   log-processor:
-    build: ../services/log-processor
+    build:
+      context: ..
+      dockerfile: services/log-processor/Dockerfile
     depends_on: [kafka, postgres]
     env_file: ../.env
 
   anomaly-detection:
-    build: ../services/anomaly-detection
+    build:
+      context: ..
+      dockerfile: services/anomaly-detection/Dockerfile
     depends_on: [kafka, redis]
     env_file: ../.env
 
   incident-service:
-    build: ../services/incident-service
+    build:
+      context: ..
+      dockerfile: services/incident-service/Dockerfile
     depends_on: [kafka, redis, postgres, rabbitmq]
     ports:
       - "4002:4002"
@@ -69,12 +81,16 @@ services:
     env_file: ../.env
 
   ai-agent:
-    build: ../services/ai-agent
+    build:
+      context: ..
+      dockerfile: services/ai-agent/Dockerfile
     depends_on: [rabbitmq, postgres]
     env_file: ../.env
 
   web:
-    build: ../apps/web
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
     depends_on: [incident-service]
     ports: ["5173:5173"]
     env_file: ../.env
