@@ -124,18 +124,72 @@ tolerance (retry, dead-letter queues, circuit breaker).
   dashboard" section explaining the split-app decision and the
   `time_bucket` design choice.
 
+### 2026-09-06 — First real `docker compose up` run: 3 bugs only a live stack could catch
+- **Also decided:** `CLAUDE.md` §1 tightened — every task now branches from
+  `dev` (no more direct-to-`dev` exception for small work), and a task's
+  branch is pushed to `origin` automatically once it's green, without
+  waiting for per-push confirmation; opening a PR or merging still requires
+  an explicit ask.
+- Brought the whole stack up for the first time via `docker compose -f
+  infra/docker-compose.yml up --build` (previously only unit-tested with
+  everything mocked). Found and fixed three bugs that mocked tests
+  structurally couldn't catch, each on `fix/timescale-raw-logs-unique-index`:
+  1. **Postgres never finished initializing.** `infra/postgres/init.sql`
+     put a unique index on `raw_logs(event_id)` alone; TimescaleDB rejects
+     any unique index on a hypertable that omits the partitioning column,
+     so `init.sql` aborted mid-script and left the DB with only the
+     `raw_logs` table. Fixed by widening the index (and `log-processor`'s
+     `ON CONFLICT` target) to `(event_id, time)`.
+  2. **`incident-service` and `anomaly-detection` crashed on startup.**
+     `KafkaClient.consume()`'s initial `consumer.connect()` relied solely on
+     kafkajs's own internal retrier (~5 attempts, a few seconds) — not
+     enough patience for "the Kafka container just started and hasn't
+     finished leader election," a routine race on `docker compose up`, not
+     an outage. `log-processor`/`ai-agent` happened to win the race and
+     survived; the other two didn't and crashed with
+     `KafkaJSNumberOfRetriesExceeded`. Fixed by wrapping the startup
+     connect/subscribe (and the producer's lazy connect) in the shared
+     `withRetry` backoff, per `CLAUDE.md` §5.
+  3. **Neither dashboard could actually read `incident-service`'s API in a
+     browser.** No CORS middleware was configured; `curl` doesn't enforce
+     CORS so route-level tests never caught it. Extracted the Express app
+     assembly into `src/app.ts` (now unit-testable on its own) and added a
+     `cors()` allowlist driven by `CORS_ORIGINS`, defaulting to both
+     dashboards' dev ports.
+- **Validated for real, not just unit-tested:** with all three fixes in,
+  posted two log lines (`redis timeout`, `pg pool exhausted`) for the same
+  service through `log-collector` → confirmed both signals correlated into
+  one `incidents` row via `GET /incidents`, the row appeared correctly in
+  `GET /reports/summary`, `raw_logs` persisted both lines, `ai-agent` hit
+  Voyage/Claude with placeholder keys and correctly retried then routed to
+  `incident.analysis.jobs.dlq` instead of crashing (expected — no API keys
+  set), and both `frontend`/`frontend-reports` returned CORS headers for
+  their own origins and none for an arbitrary one.
+- Local-only, not committed: `.env` (real values for the Docker network's
+  hostnames, e.g. `KAFKA_BROKERS=kafka:29092` instead of `localhost`) and
+  `infra/docker-compose.override.yml` (remaps Redis's host port to 6380
+  because another unrelated project on this machine already holds 6379 —
+  now gitignored so it doesn't leak a machine-specific port into the repo).
+
 ## Next up
-- Bring the stack up via `docker compose -f infra/docker-compose.yml up
-  --build` and validate one full log → incident → root-cause round trip
-  against real Kafka/Redis/Postgres.
 - Seed the `runbooks` table with example postmortems so the RAG retriever
-  in `ai-agent` has something real to retrieve against (currently empty).
-- Add integration tests that exercise that same round trip against the
-  dockerized dependencies (today's tests all mock Kafka/Postgres/Redis at
-  the unit level).
+  in `ai-agent` has something real to retrieve against (currently empty —
+  confirmed by watching `ai-agent` actually run: Voyage/Claude calls fail
+  fast on placeholder keys, but even with real keys there's nothing to
+  retrieve yet).
 - `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` are required in `.env` for
   `ai-agent` to actually call Claude / generate embeddings — neither is
   set yet.
-- `frontend-reports/` has not been exercised against a live
-  `incident-service` + seeded Postgres data yet — only unit/component
-  tests with mocked `fetch`/repository so far.
+- Add integration tests that exercise the log → incident → root-cause round
+  trip against dockerized dependencies (testcontainers or similar) instead
+  of only mocking Kafka/Postgres/Redis at the unit level — today's coverage
+  is unit-level plus one manual `docker compose` pass, not an automated
+  regression test for what that pass caught.
+- Duplicate DLQ entries were observed for the same analysis job right after
+  `ai-agent` started (a Kafka rebalance during startup redelivered an
+  uncommitted message — normal at-least-once semantics, not a correctness
+  bug since Postgres is only written to on success) — worth an idempotency
+  check in `ai-agent`/DLQ consumers if duplicate DLQ noise becomes a problem
+  in practice.
+- The dashboards have only been checked for correct CORS headers and a 200
+  response via `curl`, not opened in an actual browser yet.
