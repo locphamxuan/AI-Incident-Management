@@ -17,6 +17,13 @@ export interface ConsumeOptions<T> {
   maxAttempts?: number;
 }
 
+/** kafkajs's own internal connection retrier gives up after a few seconds,
+ *  which isn't enough patience for "the broker container just started and
+ *  hasn't finished leader election yet" — a routine `docker compose up`
+ *  race, not a real outage. Wrap the one-time connect/subscribe with our
+ *  own backoff instead of letting it crash the process. */
+const STARTUP_CONNECT_RETRY = { attempts: 10, baseDelayMs: 500, maxDelayMs: 10_000 };
+
 export class KafkaClient {
   private readonly kafka: Kafka;
   private readonly logger: Logger;
@@ -29,8 +36,13 @@ export class KafkaClient {
 
   private async getProducer(): Promise<Producer> {
     if (!this.producer) {
-      this.producer = this.kafka.producer();
-      await this.producer.connect();
+      const producer = this.kafka.producer();
+      await withRetry(() => producer.connect(), {
+        ...STARTUP_CONNECT_RETRY,
+        onRetry: (error, attempt) =>
+          this.logger.warn({ err: error, attempt }, "kafka producer connect failed, retrying"),
+      });
+      this.producer = producer;
     }
     return this.producer;
   }
@@ -51,8 +63,17 @@ export class KafkaClient {
   async consume<T>(options: ConsumeOptions<T>): Promise<void> {
     const { topic, groupId, handler, maxAttempts = 3 } = options;
     const consumer = this.kafka.consumer({ groupId });
-    await consumer.connect();
-    await consumer.subscribe({ topic, fromBeginning: false });
+    await withRetry(
+      async () => {
+        await consumer.connect();
+        await consumer.subscribe({ topic, fromBeginning: false });
+      },
+      {
+        ...STARTUP_CONNECT_RETRY,
+        onRetry: (error, attempt) =>
+          this.logger.warn({ err: error, attempt, topic, groupId }, "kafka consumer connect failed, retrying"),
+      },
+    );
 
     await consumer.run({
       eachMessage: async (payload) => {
