@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS raw_logs (
 );
 SELECT create_hypertable('raw_logs', 'time', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS raw_logs_service_time_idx ON raw_logs (service, time DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS raw_logs_event_id_idx ON raw_logs (event_id);
+-- TimescaleDB requires the partitioning column ("time") in any unique index
+-- on a hypertable, so the dedup key is the pair, not event_id alone.
+CREATE UNIQUE INDEX IF NOT EXISTS raw_logs_event_id_idx ON raw_logs (event_id, time);
 
 -- Numeric metric samples (cpu, latency, error rate, pool utilization, ...)
 CREATE TABLE IF NOT EXISTS metrics (
