@@ -3,7 +3,8 @@
 ## Codebase layout
 
 ```
-frontend/                  React dashboard (Vite + TS)
+frontend/                  React dashboard (Vite + TS) — live incident view
+frontend-reports/          React dashboard (Vite + TS) — reporting/analytics view
 backend/
   shared/                  @ai-incident/shared — resilience, Kafka, Redis, types
   services/
@@ -124,6 +125,26 @@ The connection pool was exhausted at 12:44.
 - `runbooks` — postmortem/runbook text + `vector` embedding column (pgvector) for RAG retrieval.
 
 Full DDL: [`infra/postgres/init.sql`](../infra/postgres/init.sql).
+
+## Reporting dashboard
+
+`frontend-reports/` is a separate, independently deployable app from the live
+incident dashboard (`frontend/`) — the two have different consumers and
+refresh models: `frontend/` is push-driven (WebSocket, sub-second updates for
+an on-call engineer watching an active incident), while `frontend-reports/`
+is pull-driven, read-only, and aggregate-oriented (an engineering
+manager reviewing trends over days/weeks). Splitting them keeps the
+WebSocket/real-time code out of a view that doesn't need it and lets the two
+scale and deploy independently.
+
+It's served by `GET /reports/summary?days=<n>` on `incident-service`
+(`src/routes/reports.ts`, `IncidentRepository.getReportSummary` in
+`src/db.ts`), which returns incident totals by status/severity/service, MTTR,
+and a daily opened-vs-resolved trend. The aggregation happens in Postgres —
+grouped counts plus a Timescale `time_bucket('1 day', ...)` for the trend —
+rather than pulling raw incident rows to the app and reducing them in JS, so
+the endpoint's cost stays proportional to the number of distinct
+days/services/severities in range, not the number of incidents in it.
 
 ## Scaling & deployment notes
 

@@ -82,6 +82,48 @@ tolerance (retry, dead-letter queues, circuit breaker).
   (now triggers on both `main` and `dev`) to match.
 - Pushed both branches to `origin` (`locphamxuan/AI-Incident-Management`).
 
+### 2026-09-06 — Reports dashboard (`frontend-reports/`) + `/reports/summary` endpoint
+- **Decision (confirmed with the user):** the reporting dashboard is a
+  separate, independently deployable FE app (`frontend-reports/`), not a
+  route bolted onto the existing live `frontend/` dashboard — the two have
+  different consumers/refresh models (push/WebSocket for on-call vs.
+  pull/aggregate for trend review). The backing API lives on
+  `incident-service` (not a new microservice) since it only needs a couple
+  of aggregate queries against data `incident-service` already owns.
+- Backend: `IncidentRepository.getReportSummary(days)`
+  (`backend/services/incident-service/src/db.ts`) aggregates incident totals
+  by status/severity/service, MTTR, and a daily opened-vs-resolved trend.
+  System-design note (the "optimize what's necessary" ask): the trend query
+  uses TimescaleDB's `time_bucket('1 day', ...)` and `GROUP BY`/`FILTER` in
+  Postgres instead of pulling raw incident rows to the app and reducing in
+  JS — cost stays proportional to distinct days/services/severities in
+  range, not incident count. Exposed via `GET /reports/summary?days=<n>`
+  (`src/routes/reports.ts`, clamped to 1–365 days), wired in `src/index.ts`.
+  Added a `ReportSummary` type to `@ai-incident/shared`
+  (`backend/shared/src/types/reports.ts`) for the shape.
+- Frontend: `frontend-reports/` — same Vite+React+TS scaffold as
+  `frontend/` (own `package.json`, `vite.config.ts` on port 5174,
+  `Dockerfile`), with a range picker (7/30/90 days), summary cards, a
+  severity/service breakdown, and a dependency-free inline-SVG trend chart
+  (no charting library added). Registered in root `package.json`
+  workspaces and as a `reports` service in `infra/docker-compose.yml`
+  (port 5174, depends on `incident-service`). `.env.example` gained
+  `VITE_INCIDENT_API_URL`.
+- **Confirmed, not just assumed:** PostgreSQL (+ TimescaleDB/pgvector) was
+  already the project's sole datastore (`docs/ARCHITECTURE.md`,
+  `infra/postgres/init.sql`) — no migration was needed for the "database
+  uses Postgres" requirement, only the new aggregate queries above.
+- **Validated:** added repository-level tests for the aggregation/merge
+  logic (`tests/reportSummary.test.ts`), route tests
+  (`tests/reports.route.test.ts`), and component/integration tests for the
+  new FE app (`frontend-reports/tests/*`, including a mocked-`fetch` test of
+  the range picker re-fetching). Ran `npm test`, `npm run typecheck`, and
+  `npm run lint` across all workspaces plus a production `vite build` of
+  `frontend-reports` — all green.
+- Docs updated: `docs/ARCHITECTURE.md` codebase layout + new "Reporting
+  dashboard" section explaining the split-app decision and the
+  `time_bucket` design choice.
+
 ## Next up
 - Bring the stack up via `docker compose -f infra/docker-compose.yml up
   --build` and validate one full log → incident → root-cause round trip
@@ -94,3 +136,6 @@ tolerance (retry, dead-letter queues, circuit breaker).
 - `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` are required in `.env` for
   `ai-agent` to actually call Claude / generate embeddings — neither is
   set yet.
+- `frontend-reports/` has not been exercised against a live
+  `incident-service` + seeded Postgres data yet — only unit/component
+  tests with mocked `fetch`/repository so far.
