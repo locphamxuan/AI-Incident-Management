@@ -7,7 +7,8 @@
   "workspaces": [
     "backend/shared",
     "backend/services/*",
-    "frontend"
+    "frontend",
+    "frontend-reports"
   ],
   "scripts": {
     "lint": "eslint .",
