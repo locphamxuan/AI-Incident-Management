@@ -11,13 +11,19 @@ that authorization is granted by this file existing.
   from `dev` and merged back into it). `main` is only ever updated by
   merging `dev` → `main` at the moment of a deploy — never commit feature
   work, fixes, or docs straight to `main`.
-- **Branch per context.** For anything non-trivial, checkout a new branch
-  from `dev`:
+- **Always branch per context.** Before starting any task, checkout a new
+  branch from `dev` — no direct commits to `dev`, even for small same-session
+  work:
   - `feature/<short-name>` — new capability
   - `fix/<short-name>` — bug fix
   - `chore/<short-name>` — tooling, config, docs, refactors with no behavior change
-  - Merge back into `dev` when done. Small, same-session work can commit
-    directly to `dev`.
+  - Merge back into `dev` when done.
+- **Auto-commit and auto-push, but never auto-PR.** Once a task's commits are
+  made on its branch and pass tests/lint (see below), push the branch to
+  `origin` right away — this is pre-authorized and doesn't need to be
+  confirmed each time. Do **not** open a pull request or merge the branch
+  into `dev`/`main` without being explicitly asked — leave that step to the
+  user.
 - **Split commits by context.** One commit = one cohesive change. Don't bundle
   unrelated changes ("add retry util" and "fix websocket reconnect" are two
   commits, not one). Prefer several small, reviewable commits over one large one.
