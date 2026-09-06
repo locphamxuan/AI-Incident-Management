@@ -1,5 +1,5 @@
 import type pg from "pg";
-import type { AnomalySignal, RootCauseAnalysis } from "@ai-incident/shared";
+import type { AnomalySignal, ReportSummary, RootCauseAnalysis } from "@ai-incident/shared";
 
 export interface IncidentRow {
   id: string;
@@ -72,5 +72,84 @@ export class IncidentRepository {
       `UPDATE incidents SET status = 'investigating' WHERE id = $1 AND status = 'open'`,
       [analysis.incidentId],
     );
+  }
+
+  /** Aggregated numbers for the reporting dashboard, computed in Postgres
+   *  (grouped counts + Timescale `time_bucket` for the daily trend) instead
+   *  of pulling raw incident rows to the app and aggregating in JS. */
+  async getReportSummary(days: number): Promise<ReportSummary> {
+    const [
+      { rows: statusRows },
+      { rows: severityRows },
+      { rows: serviceRows },
+      { rows: mttrRows },
+      { rows: openedRows },
+      { rows: resolvedRows },
+    ] = await Promise.all([
+      this.pool.query<{ status: "open" | "investigating" | "resolved"; count: number }>(
+        `SELECT status, count(*)::int AS count FROM incidents GROUP BY status`,
+      ),
+      this.pool.query<{ severity: string; count: number }>(
+        `SELECT severity, count(*)::int AS count FROM incidents GROUP BY severity`,
+      ),
+      this.pool.query<{ service: string; total: number; open: number }>(
+        `SELECT service,
+                count(*)::int AS total,
+                count(*) FILTER (WHERE status != 'resolved')::int AS open
+         FROM incidents GROUP BY service ORDER BY count(*) DESC LIMIT 20`,
+      ),
+      this.pool.query<{ mttr_seconds: number | null }>(
+        `SELECT avg(extract(epoch FROM (resolved_at - opened_at)))::float8 AS mttr_seconds
+         FROM incidents WHERE status = 'resolved' AND resolved_at IS NOT NULL`,
+      ),
+      this.pool.query<{ bucket: Date | string; count: number }>(
+        `SELECT time_bucket('1 day', opened_at) AS bucket, count(*)::int AS count
+         FROM incidents WHERE opened_at >= now() - ($1::text || ' days')::interval
+         GROUP BY bucket ORDER BY bucket`,
+        [days],
+      ),
+      this.pool.query<{ bucket: Date | string; count: number }>(
+        `SELECT time_bucket('1 day', resolved_at) AS bucket, count(*)::int AS count
+         FROM incidents WHERE resolved_at IS NOT NULL AND resolved_at >= now() - ($1::text || ' days')::interval
+         GROUP BY bucket ORDER BY bucket`,
+        [days],
+      ),
+    ]);
+
+    const totals = { total: 0, open: 0, investigating: 0, resolved: 0 };
+    for (const row of statusRows) {
+      totals.total += row.count;
+      totals[row.status] = row.count;
+    }
+
+    const bySeverity: Record<string, number> = {};
+    for (const row of severityRows) bySeverity[row.severity] = row.count;
+
+    const byService = serviceRows.map((row) => ({
+      service: row.service,
+      total: row.total,
+      open: row.open,
+    }));
+
+    const mttrSeconds = mttrRows[0]?.mttr_seconds ?? null;
+
+    const dateKey = (value: Date | string): string =>
+      (value instanceof Date ? value.toISOString() : value).slice(0, 10);
+
+    const trendByDate = new Map<string, { opened: number; resolved: number }>();
+    for (const row of openedRows) {
+      const key = dateKey(row.bucket);
+      trendByDate.set(key, { opened: row.count, resolved: trendByDate.get(key)?.resolved ?? 0 });
+    }
+    for (const row of resolvedRows) {
+      const key = dateKey(row.bucket);
+      trendByDate.set(key, { opened: trendByDate.get(key)?.opened ?? 0, resolved: row.count });
+    }
+
+    const trend = [...trendByDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, counts]) => ({ date, ...counts }));
+
+    return { rangeDays: days, totals, bySeverity, byService, mttrSeconds, trend };
   }
 }
