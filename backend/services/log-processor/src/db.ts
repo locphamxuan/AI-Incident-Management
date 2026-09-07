@@ -8,7 +8,7 @@ export class LogRepository {
     await this.pool.query(
       `INSERT INTO raw_logs (time, service, level, message, metadata, event_id)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (event_id) DO NOTHING`,
+       ON CONFLICT (event_id, time) DO NOTHING`,
       [
         event.timestamp,
         event.service,

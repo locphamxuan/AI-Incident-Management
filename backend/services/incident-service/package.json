@@ -12,11 +12,13 @@
   },
   "dependencies": {
     "@ai-incident/shared": "*",
+    "cors": "^2.8.5",
     "express": "^4.21.0",
     "pg": "^8.13.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.5.5",
     "@types/pg": "^8.11.10",

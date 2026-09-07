@@ -147,3 +147,7 @@ vite.config.ts.timestamp-*
 .claude/
 .claude-mem/
 .mcp-cache/
+
+# Local docker-compose port/service overrides (e.g. remapping a port that
+# collides with another project on the same machine) — machine-local.
+infra/docker-compose.override.yml
